@@ -86,21 +86,16 @@ sleep 3
 echo "  CharacterServer started (PID: $CHAR_PID)"
 echo ""
 
-# Start WorldServer
-echo "[4/4] Starting WorldServer..."
-python2 -u WorldServer.py gameconfig=mom.cfg \
-    -worldname=PREMIUM_TheWorld \
-    > "$LOGDIR/WorldServer.log" 2>&1 &
-WORLD_PID=$!
-
-# Wait a bit for WorldServer to initialize zone servers
+# WorldServer is spawned by WorldDaemon automatically
+# Just wait for zone servers to come up
+echo "[4/4] Waiting for zone servers..."
 sleep 10
 
 if netstat -tln | grep -q ":28000 "; then
-    echo "  WorldServer OK - Zone listening on port 28000 (PID: $WORLD_PID)"
+    echo "  Zone server listening on port 28000"
 else
-    echo "  WorldServer started (zone servers may take time to spawn)"
-    echo "  Check logs: docker logs <container>"
+    echo "  Zone servers may take time to spawn"
+    echo "  Check WorldDaemon.log for details"
 fi
 echo ""
 

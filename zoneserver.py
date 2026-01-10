@@ -42,14 +42,23 @@ try:
     
     
     USE_WX = "-wx" in sys.argv
-    
-    if sys.platform == 'win32' and not USE_WX:
-        from twisted.internet.iocpreactor import install
+
+    if sys.platform == 'win32':
+        if USE_WX:
+            import wx
+            from twisted.internet.wxreactor import install
+        else:
+            from twisted.internet.iocpreactor import install
+        install()
+    elif sys.platform.startswith('linux'):
+        # On Linux dedicated server, use default reactor (epoll)
+        pass  # No explicit install needed, Twisted uses epoll by default
     else:
-        import wx
-        from twisted.internet.wxreactor import install
-    
-    install()
+        # macOS or other - try wx if available
+        if USE_WX:
+            import wx
+            from twisted.internet.wxreactor import install
+            install()
     
     
     from twisted.internet import reactor

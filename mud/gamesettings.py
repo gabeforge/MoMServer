@@ -62,9 +62,7 @@ SERVER_MYSQL_PASSWORD = "mypassword"
 SERVER_PATCH_PREMIUM = SERVER_WORLD_USERNAME + ":" + SERVER_WORLD_PASSWORD + "@http://" + MASTERIP + "/svn/" + SERVER_WORLD_SVN
 SERVER_PATCH_DEMO = SERVER_WORLD_USERNAME + ":" + SERVER_WORLD_PASSWORD + "@http://" + MASTERIP + "/svn/" + SERVER_WORLD_SVN
 
-CLUSTERNAMES = [
-("base","landone","landtwo"),
-]
+CLUSTERNAMES = []  # Empty = load zone names from world.db
 
 WORLDNAMES = {"Premium_MMORPG": "TestDaemon"}
 

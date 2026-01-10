@@ -31,7 +31,7 @@ EXTRACT_TIMES = {}
 TICK_COUNTER = 6*15 #once every minute
 
 
-class CharacterServerAvatar(pb.Root):
+class CharacterServerAvatar(pb.Referenceable):
     def __init__(self):
         from mud.world.theworld import World
         
@@ -340,9 +340,15 @@ class CharacterServerAvatar(pb.Root):
         else:
             try:
                 p = self.createPlayer(publicName,code)
-            except:
+            except Exception as e:
+                import sys
                 traceback.print_exc()
-                return (False,"Error creating new player")
+                # Also log to file for debugging
+                with open('/tmp/createplayer_error.log', 'a') as f:
+                    f.write("=== Error creating player %s ===\n" % publicName)
+                    traceback.print_exc(file=f)
+                    f.write("\n")
+                return (False,"Error creating new player: %s" % str(e))
         
         p.premium = premium
         p.fantasyName = p.publicName #legacy

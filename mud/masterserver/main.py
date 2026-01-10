@@ -12,11 +12,15 @@ if "-wx" in sys.argv:
 
 if sys.platform == 'win32' and not USE_WX:
     from twisted.internet.iocpreactor import install
-else:
+    install()
+elif USE_WX:
     import wx
     from twisted.internet.wxreactor import install
-    
-install()
+    install()
+else:
+    # Linux headless mode - use select reactor
+    from twisted.internet import selectreactor
+    selectreactor.install()
 
 from mud.server.config import ConfigureServer, LoadConfiguration
 import traceback

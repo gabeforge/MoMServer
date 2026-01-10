@@ -14,12 +14,15 @@ USE_WX = "-wx" in sys.argv
 
 if sys.platform == 'win32' and not USE_WX:
     from twisted.internet.iocpreactor import install
-else:
-    USE_WX = True
+    install()
+elif USE_WX:
     import wx
     from twisted.internet.wxreactor import install
-
-install()
+    install()
+else:
+    # Linux headless mode - use select reactor
+    from twisted.internet import selectreactor
+    selectreactor.install()
 
 from twisted.cred.checkers import InMemoryUsernamePasswordDatabaseDontUse
 from twisted.cred.credentials import UsernamePassword
@@ -358,7 +361,10 @@ def main():
     LoadZoneClusterNames()
     
     startWorldServices()
-    startCharacterServices(PUBLICNAME,PASSWORD)
+    # Use standard server credentials so CharacterServer can connect
+    print "### About to call startCharacterServices with:", SERVER_WORLD_USERNAME, SERVER_WORLD_PASSWORD
+    startCharacterServices(SERVER_WORLD_USERNAME, SERVER_WORLD_PASSWORD)
+    print "### startCharacterServices completed"
     #startImpServices(ImpConnected)
     reactor.callLater(0,SpawnWorld)
     reactor.callLater(0,Tick)

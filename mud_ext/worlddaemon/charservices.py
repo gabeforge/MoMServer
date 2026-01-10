@@ -176,6 +176,11 @@ class CServerMind(pb.Root):
         d.addCallback(self.playerTransferredAndInstalled,wip,wport,zport,zpassword)
         return d
 
+    def remote_transferPlayer(self,publicname,pbuffer,charname,cbuffer,zonename,cvalues,remoteLeaderName,guildInfo):
+        # Alias for remote_zoneTransferPlayer - the base mud package calls transferPlayer
+        # but mud_ext renamed it to zoneTransferPlayer
+        return self.remote_zoneTransferPlayer(publicname,pbuffer,charname,cbuffer,zonename,cvalues,remoteLeaderName,guildInfo)
+
     def remote_zoneTransferPlayer(self,publicname,pbuffer,charname,cbuffer,zonename,cvalues,remoteLeaderName,guildInfo):
         from worldservices import ZoneClusterAvatar
         if not cbuffer:
@@ -280,8 +285,12 @@ class SimpleRealm:
         
 def StartServices(username,password):
     from md5 import md5
+    # Write to file for debugging
+    with open('/tmp/charservices_debug.log', 'w') as f:
+        f.write("StartServices called with: username=%s, password=%s\n" % (username, password))
+    print "### CharServices: Registering user '%s' with password '%s'" % (username, password)
     password = md5(password).digest()
-    
+
     portal = Portal(SimpleRealm())
     checker = InMemoryUsernamePasswordDatabaseDontUse()
     checker.addUser(username,password)

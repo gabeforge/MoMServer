@@ -104,19 +104,17 @@ class ZoneClusterAvatar(pb.Avatar):
         self.spawnedCallback = spawnedCallback
         
         print "####Spawning World Server: " + str(args)
-		
-        if sys.platform[:6] != 'darwin':
+
+        if sys.platform == 'win32':
             s = 'start "%s" %s %s'%(os.getcwd(),cmd,args)
             s = os.path.normpath(s)
             os.system(s)
         else:
-            cmd = sys.executable
-            args = args.split(" ")
-            args.insert(0,cmd)
-            
-            s = 'pythonw -c \'import os;os.spawnv(os.P_NOWAIT,"%s",[%s])\''%(cmd,','.join('"%s"'%arg for arg in args))
-            print s
-            os.system(s)
+            # Linux/Unix - use subprocess with new session
+            import subprocess
+            import shlex
+            args_list = shlex.split('%s %s' % (cmd, args))
+            subprocess.Popen(args_list, preexec_fn=os.setsid)
     
 #remote
     

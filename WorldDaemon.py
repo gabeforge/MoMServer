@@ -18,7 +18,7 @@ elif sys.platform == "win32":
     os.chdir(os.path.dirname(sys.argv[0]))
 
 
-from mud.worlddaemon.main import main
+from mud_ext.worlddaemon.main import main
 main()
 
 

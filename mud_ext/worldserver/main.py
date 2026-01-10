@@ -24,12 +24,15 @@ try:
 
     if sys.platform == 'win32' and not USE_WX:
         from twisted.internet.iocpreactor import install
-    else:
-        USE_WX = True
+        install()
+    elif USE_WX:
         import wx
         from twisted.internet.wxreactor import install
-
-    install()
+        install()
+    else:
+        # Linux headless mode - use select reactor
+        from twisted.internet import selectreactor
+        selectreactor.install()
 
     from twisted.spread import pb
     from twisted.internet import reactor
@@ -619,6 +622,17 @@ try:
                     zpassword.append(z.password)
                     zport.append(z.port)
 
+        # If no zone servers running (pytge unavailable), provide fake zone data
+        # so the daemon can route players. The client will fail to connect to zones
+        # but at least the flow proceeds for testing.
+        if not len(zport) and len(STATICZONES):
+            print "No zone servers running, providing placeholder zone data for routing"
+            base_port = 29000
+            for i, zname in enumerate(STATICZONES):
+                zpid.append(0)  # fake PID
+                zport.append(base_port + i)  # fake port
+                zpassword.append("nozone")  # fake password
+
         #this also marks this cluster server as live
         perspective.callRemote("setZonePID",zpid,zport,zpassword)
 
@@ -654,7 +668,14 @@ try:
         world.zoneIP = ip
         perspective.broker.transport.loseConnection()
         if len(STATICZONES):
-            SpawnZones()
+            # Check if pytge is available for zone servers
+            try:
+                import pytge
+                SpawnZones()
+            except ImportError:
+                print "pytge not available (Windows-only), skipping zone server spawning"
+                print "Running in world-server-only mode"
+                ConnectToDaemon()
         else:
             # if not CoreSettings.PGSERVER:
             #     THESERVER.allowConnections = True
@@ -687,7 +708,14 @@ try:
             print "WAN IP found: ",ip
             #temporary, need to be able to set individual zone ip's
             world.zoneIP = ip
-            SpawnZones()
+            # Check if pytge is available for zone servers
+            try:
+                import pytge
+                SpawnZones()
+            except ImportError:
+                print "pytge not available (Windows-only), skipping zone server spawning"
+                print "Running in world-server-only mode (PGSERVER)"
+                ConnectToDaemon()
 
 
     def main():

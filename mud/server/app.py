@@ -213,6 +213,7 @@ class MasterPerspective(pb.Avatar):
     
     
     def perspective_call(self,*args):
+        print "#### perspective_call received: interface=%s, args=%s, user=%s" % (self._interface, args, self.username)
         if THESERVER.throttleUsage and self.throttle:
             if self.cpuTime > 0:
                 dc = MasterPerspective.deferredCalls[self]
@@ -220,7 +221,7 @@ class MasterPerspective(pb.Avatar):
                 dc.append((d,args))
                 #print "Throttling",args
                 return d
-            
+
         tm = sysTime()
         function = args[0]
         interface = self._interface

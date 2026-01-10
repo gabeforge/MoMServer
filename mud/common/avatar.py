@@ -16,11 +16,17 @@ class MetaAvatar(type):
 class Avatar(pb.Avatar,object):
 
     __metaclass__=MetaAvatar
-    
+
+    def __init__(self, username=None, role=None, mind=None):
+        # Default init for avatars that don't define their own
+        self.username = username
+        self.role = role
+        self.mind = mind
+
     def createAvatar(classname):
         cls=MetaAvatar.avatarClasses[classname]
         return object.__new__(cls)
-        
+
     createAvatar = staticmethod(createAvatar)
 
 
@@ -71,8 +77,8 @@ class DatabaseAvatar(Avatar):
         
     def perspective_delete(self,table,id):
         role=self.role
-        tp = role.getTablePermission(table)        
-        if not tp or not tp.delete:
+        tp = role.getTablePermission(table)
+        if not tp or not tp.canDelete:
             return False #error
             
         tableClass = tp.tableClass
@@ -122,7 +128,7 @@ class DatabaseAvatar(Avatar):
         tp = role.getTablePermission(table)        
         if not tp:
             return None
-        if not tp.insert or not tp.write:
+        if not tp.canInsert or not tp.write:
             return None#we don't have update on table
                     
         return ghost.insertDB().getGhost()

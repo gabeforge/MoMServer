@@ -4,3 +4,7 @@
 MASTER_PASSWORD = "^%$!^@%&uUUUuqjlkja--++"
 
 GMSERVER_PASSWORD = "&^!(*&@(*@jjjkkwiwiwu--++"
+
+# GM Server connection settings
+GMSERVERIP = "127.0.0.1"
+GMSERVERPORT = 1998

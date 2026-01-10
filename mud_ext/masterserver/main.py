@@ -12,11 +12,15 @@ if "-wx" in sys.argv:
 
 if sys.platform == 'win32' and not USE_WX:
     from twisted.internet.iocpreactor import install
-else:
+    install()
+elif USE_WX:
     import wx
     from twisted.internet.wxreactor import install
-    
-install()
+    install()
+else:
+    # Linux headless mode - use select reactor
+    from twisted.internet import selectreactor
+    selectreactor.install()
 
 from mud_ext.server.config import ConfigureServer, LoadConfiguration
 from mud_ext.server.serversettings import *
@@ -389,6 +393,7 @@ class PlayerAvatar(Avatar):
         
     def perspective_submitPlayerToWorld(self, worldName):
         # TODO: should have some logging here that can be linked to fail2ban
+        print "####submitPlayerToWorld: CHARSERVER_MIND =", CHARSERVER_MIND
         if not CHARSERVER_MIND:
             return (False, "Character Server is down.")
 
@@ -520,9 +525,10 @@ class EnumWorldsAvatar(Avatar):
             #    print "####Skipped World: Testing and not allowGuests"
             #    continue
             
-            if not testing and not w.allowGuests:
-                print "####Skipped World: Not Testing and not allowGuests"
-                continue
+            # Removed testing/allowGuests filter - not needed for local server
+            # if not testing and not w.allowGuests:
+            #     print "####Skipped World: Not Testing and not allowGuests"
+            #     continue
             
             if not launching:
                 t = datetime.now() - w.announceTime
@@ -569,13 +575,16 @@ class EnumWorldsAvatar(Avatar):
 
 #Character Server
 CHARSERVER_MIND = None
-class CharacterAvatar(Avatar):        
-    def setup(self, username, role, mind):
+class CharacterAvatar(Avatar):
+    def __init__(self, username, role, mind):
         global CHARSERVER_MIND
+        print "####CharacterAvatar.__init__() called - setting CHARSERVER_MIND"
+        Avatar.__init__(self, username, role, mind)
         self.username = username
         self.role = role
         self.mind = mind
         CHARSERVER_MIND = mind
+        print "####CHARSERVER_MIND is now:", CHARSERVER_MIND
 
     def perspective_getLastBackupFile(self):
         return LASTBACKUPFILE
@@ -603,13 +612,25 @@ def ConfigureSettings():
     except:
         user = User(name=CONFIG["World Username"], password = "")
         key = RegKey(key=CONFIG["World Username"]+"!")
-        account = Account(regkey=key.key, publicName=CONFIG["World Username"], email="", password="")
+        # Use unique email for world accounts to avoid UNIQUE constraint issues
+        world_email = CONFIG["World Username"] + "@world.local"
+        account = Account(regkey=key.key, publicName=CONFIG["World Username"], email=world_email, password="")
         account.addProduct("MOM")
         user.addRole(Role.byName("Player"))
         user.addRole(Role.byName("World"))
         
     user.password = CONFIG["World Password"]
-    account = Account.byPublicName(user.name)
+    try:
+        account = Account.byPublicName(user.name)
+    except:
+        # Account doesn't exist for this user, create it
+        try:
+            key = RegKey.byKey(user.name+"!")
+        except:
+            key = RegKey(key=user.name+"!")
+        world_email = user.name + "@world.local"
+        account = Account(regkey=key.key, publicName=user.name, email=world_email, password="")
+        account.addProduct("MOM")
     account.password = user.password
     
     cserver = User.byName("CharacterServer")

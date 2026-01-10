@@ -95,7 +95,14 @@ class PlayerAvatar(Avatar):
         
     
     def gotCheckCharacterNameError(self,result):
-        return (-1,"There was an error creating this character")
+        import traceback
+        print "#### ERROR in checkCharacterName:", result
+        with open('/tmp/character_error.log', 'a') as f:
+            f.write("=== checkCharacterName error ===\n")
+            f.write(str(result) + "\n")
+            if hasattr(result, 'getTraceback'):
+                f.write(result.getTraceback() + "\n")
+        return (-1,"There was an error creating this character: %s" % str(result))
         
     def perspective_newCharacter(self,newchar):
         from cserveravatar import AVATAR
@@ -155,6 +162,9 @@ class PlayerAvatar(Avatar):
         
         rg = GetRaceGraphics()
         size = 1.0
+        model = None
+        animation = None
+        print "#### DEBUG newCharacter: race='%s', available races=%s" % (newchar.race, [r.name for r in rg])
         for ri in rg:
             if ri.name == newchar.race:
                 if newchar.sex == "Male":
@@ -176,7 +186,10 @@ class PlayerAvatar(Avatar):
                     else:
                         model = ri.model_heavy_female
                 break
-        
+
+        if model is None:
+            return (-1, "Race '%s' not found in race_graphic table" % newchar.race, None)
+
         spawn = Spawn(name=newchar.name,race=newchar.race,pclassInternal = newchar.klass,plevel = 1,model=model,scale=size,radius=2,vocalSet="C")
         spawn.realm = newchar.realm
         

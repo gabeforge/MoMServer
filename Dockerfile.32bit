@@ -106,6 +106,7 @@ COPY --from=builder /build/tge-152-fork/engine/out.GCC4.RELEASE/pytge.so /server
 
 # Copy server files
 COPY *.py /server/
+COPY main.cs /server/
 COPY mud /server/mud/
 COPY mud_ext /server/mud_ext/
 COPY projects /server/projects/

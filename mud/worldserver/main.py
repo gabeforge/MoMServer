@@ -24,12 +24,15 @@ try:
 
     if sys.platform == 'win32' and not USE_WX:
         from twisted.internet.iocpreactor import install
-    else:
-        USE_WX = True
+        install()
+    elif USE_WX:
         import wx
         from twisted.internet.wxreactor import install
-
-    install()
+        install()
+    else:
+        # Linux headless mode - use select reactor
+        from twisted.internet import selectreactor
+        selectreactor.install()
 
     from twisted.spread import pb
     from twisted.internet import reactor
@@ -93,7 +96,7 @@ try:
             SetupProcessors(CLUSTER)
         if arg.startswith('-zones='):
             z = arg[7:]
-            ZONENAMES = z.split('!')
+            ZONENAMES = [name for name in z.split('!') if name]  # Filter empty strings
         if arg.startswith('-daemonip='):
             DAEMONIP = arg[10:]
 
@@ -210,7 +213,7 @@ try:
     else:
         DATABASE = "./%s/data/worlds/multiplayer/%s/world.db"%(GAMEROOT,WORLDNAME)
 
-    SetDBConnection('sqlite:/%s'%DATABASE,True)
+    SetDBConnection('sqlite:%s'%DATABASE,True)
 
 
 
@@ -239,8 +242,6 @@ try:
     from   mud.common.avatar import RoleAvatar
 
     from mud.common.permission import User,Role
-
-
     #XXX clean this up, there is no reason for creating and destroying these, also are the roles bloating the db or are they destroyed?
     #destroy the new player user, and recreate
     try:
@@ -614,6 +615,17 @@ try:
                     zpassword.append(z.password)
                     zport.append(z.port)
 
+        # If no zone servers running (pytge unavailable), provide fake zone data
+        # so the daemon can route players. The client will fail to connect to zones
+        # but at least the flow proceeds for testing.
+        if not len(zport) and len(STATICZONES):
+            print "No zone servers running, providing placeholder zone data for routing"
+            base_port = 29000
+            for i, zname in enumerate(STATICZONES):
+                zpid.append(0)  # fake PID
+                zport.append(base_port + i)  # fake port
+                zpassword.append("nozone")  # fake password
+
         #this also marks this cluster server as live
         perspective.callRemote("setZonePID",zpid,zport,zpassword)
 
@@ -677,11 +689,17 @@ try:
             print "WAN IP found: ",ip
             #temporary, need to be able to set individual zone ip's
             world.zoneIP = ip
-            SpawnZones()
+            if len(STATICZONES):
+                # Zone servers will be spawned via Wine on Linux
+                SpawnZones()
+            else:
+                # No zones to spawn, connect directly to daemon
+                print "No static zones, connecting to daemon..."
+                ConnectToDaemon()
 
 
     def main():
-
+        import sys
         from twisted.python import log
 
         LOG = not USE_WX
@@ -693,7 +711,6 @@ try:
             f= MakeFactory(ips,"me","me")
             reactor.listenTCP(SSH_PORT, f)
 
-
         if LOG:
             fname = "./log_WorldServer.txt"
             if CLUSTER != -1:
@@ -701,7 +718,6 @@ try:
 
             LOGFILE = file(fname,"w")
             log.startLogging(LOGFILE)
-
 
         #kickstart the heart
         world = World.byName("TheWorld")

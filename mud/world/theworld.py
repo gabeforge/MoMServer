@@ -268,7 +268,10 @@ class World(Persistent):
                 # Force a write to database.
                 conn = Persistent._connection.getConnection()
                 cursor = conn.cursor()
-                cursor.execute("END;")
+                try:
+                    cursor.execute("END;")
+                except:
+                    pass  # No transaction active
                 cursor.execute("BEGIN;")
                 cursor.close()
     
@@ -286,7 +289,10 @@ class World(Persistent):
         cursor = conn.cursor()
         
         if self.transaction:
-            cursor.execute("END;")
+            try:
+                cursor.execute("END;")
+            except:
+                pass  # No transaction active, that's OK
         
         if self.dbFile and not commitOnly:
             self.backupTick -= 1
@@ -334,10 +340,13 @@ class World(Persistent):
             conn = Persistent._connection.getConnection()
             cursor = conn.cursor()
             if self.transaction:
-                cursor.execute("END;")
-            
+                try:
+                    cursor.execute("END;")
+                except:
+                    pass  # No transaction active
+
             cursor.close()
-            
+
             self.transaction = False
         
         #move me
@@ -735,10 +744,17 @@ class World(Persistent):
             # Just don't provide cluster number via gameconfig until
             #  MoM uses gameconfig as well.
             args += r' -cluster=%i'%self.clusterNum
-            s = 'start "%s" %s %s'%(os.getcwd(),cmd,args)
-            s = os.path.normpath(s)
-            print s
-            os.system(s)
+            if sys.platform == "win32":
+                s = 'start "%s" %s %s'%(os.getcwd(),cmd,args)
+                s = os.path.normpath(s)
+                print s
+                os.system(s)
+            else:
+                # Linux: spawn zone server natively (requires pytge.so)
+                import subprocess
+                full_cmd = [cmd] + args.split()
+                print "Spawning zone: %s" % ' '.join(full_cmd)
+                subprocess.Popen(full_cmd, preexec_fn=os.setsid)
         
         else:
             if arg.startswith("-wx"):

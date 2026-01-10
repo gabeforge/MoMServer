@@ -172,12 +172,15 @@ def InstallCharacterBuffer(playerID,cname,buffer):
     except:
         traceback.print_exc()
         return True
-    
+
     error = False
-    
-    dstCursor.execute("END TRANSACTION;")
+
+    try:
+        dstCursor.execute("END TRANSACTION;")
+    except:
+        pass  # No transaction active
     dstCursor.execute("BEGIN TRANSACTION;")
-    
+
     try:
         #character tables
         
@@ -199,7 +202,8 @@ def InstallCharacterBuffer(playerID,cname,buffer):
         values = GenerateInsertValues('character',(cvalues,),playerID)
         sql = 'INSERT INTO character VALUES(%s)'%(TVALUES['character'])
         try:
-            dstCursor.executemany(sql,values)
+            # Use execute instead of executemany for single row - executemany doesn't set lastrowid
+            dstCursor.execute(sql,values[0])
         except:
             traceback.print_exc()
             print sql,values
@@ -210,7 +214,8 @@ def InstallCharacterBuffer(playerID,cname,buffer):
         svalues = cursor.fetchone()
         sid = svalues[0]
         values = GenerateInsertValues('spawn',(svalues,),playerID,characterID)
-        dstCursor.executemany('INSERT INTO spawn VALUES(%s)'%(TVALUES['spawn']),values)
+        # Use execute instead of executemany for single row - executemany doesn't set lastrowid
+        dstCursor.execute('INSERT INTO spawn VALUES(%s)'%(TVALUES['spawn']),values[0])
         spawnID = dstCursor.lastrowid
         #update character with spawnID now that we have it
         dstCursor.execute("UPDATE character SET spawn_id = %i WHERE id = %i;"%(spawnID,characterID))
@@ -239,16 +244,22 @@ def InstallCharacterBuffer(playerID,cname,buffer):
             cursor.execute("SELECT * FROM %s WHERE spawn_id = %i;"%(t,sid))
             values = GenerateInsertValues(t,cursor.fetchall(),playerID,characterID,spawnID)
             dstCursor.executemany('INSERT INTO %s VALUES(%s)'%(t,TVALUES[t]),values)
-        
+
         #print "whee"
-        dstCursor.execute('END TRANSACTION;')
+        try:
+            dstCursor.execute('END TRANSACTION;')
+        except:
+            pass  # No transaction active
     except:
         error = True
         traceback.print_exc()
-        dstCursor.execute('ROLLBACK TRANSACTION;')
-    
+        try:
+            dstCursor.execute('ROLLBACK TRANSACTION;')
+        except:
+            pass
+
     dstCursor.execute('BEGIN TRANSACTION;')
-    
+
     dstCursor.close()
     #dstConn.close()
     cursor.close()
@@ -283,10 +294,13 @@ def InstallPlayerBuffer(buffer):
     except:
         traceback.print_exc()
         return True
-    
+
     error = False
-    
-    dstCursor.execute("END TRANSACTION;")
+
+    try:
+        dstCursor.execute("END TRANSACTION;")
+    except:
+        pass  # No transaction active
     dstCursor.execute("BEGIN TRANSACTION;")
     try:
         cursor.execute("SELECT * FROM player;")
@@ -347,31 +361,46 @@ def InstallPlayerBuffer(buffer):
                     cursor.execute("SELECT * FROM %s WHERE spawn_id = %i;"%(t,sid))
                     values = GenerateInsertValues(t,cursor.fetchall(),playerID,characterID,spawnID)
                     dstCursor.executemany('INSERT INTO %s VALUES(%s)'%(t,TVALUES[t]),values)
-        
+
         #print "whee"
-        dstCursor.execute('END TRANSACTION;')
+        try:
+            dstCursor.execute('END TRANSACTION;')
+        except:
+            pass  # No transaction active
     except:
         error = True
         traceback.print_exc()
-        dstCursor.execute('ROLLBACK TRANSACTION;')
-    
+        try:
+            dstCursor.execute('ROLLBACK TRANSACTION;')
+        except:
+            pass
+
     dstCursor.execute('BEGIN TRANSACTION;')
-    
+
     dstCursor.close()
     #dstConn.close()
     cursor.close()
     dbconn.close()
-    
+
     print "Player installation took %f seconds"%(time.time()-tm)
     
     return error
 
 
 
+def GetDBPath():
+    """Extract filesystem path from SQLObject URI"""
+    uri = GetDBURI()
+    if uri.startswith('sqlite:///'):
+        return uri[10:]  # sqlite:/// + absolute path
+    elif uri.startswith('sqlite:'):
+        return uri[7:]   # sqlite: + path (e.g., sqlite:./path)
+    return uri
+
 def Initialize():
     global CREATE_PLAYER_TABLE_SQL,CREATE_CHARACTER_TABLE_SQL
-    
-    dbconn = sqlite.connect(GetDBURI()[10:])
+
+    dbconn = sqlite.connect(GetDBPath())
     cursor = dbconn.cursor()
     
     CREATE_PLAYER_TABLE_SQL = ""
@@ -451,7 +480,10 @@ def ExtractPlayer(publicName,pid,cid,append=True):
     #commit current transaction so we are current
     conn = Player._connection.getConnection()
     c = conn.cursor()
-    c.execute("END TRANSACTION;")
+    try:
+        c.execute("END TRANSACTION;")
+    except:
+        pass  # No transaction active, that's OK
     c.execute("BEGIN TRANSACTION;")
     c.close()
     return ExtractCharactersThread(publicName,pid,cid,append)
@@ -459,17 +491,18 @@ def ExtractPlayer(publicName,pid,cid,append=True):
 
 def ExtractCharactersThread(publicName,pid,cid,append=True):
     global CREATE_PLAYER_TABLE_SQL
-    
+
     from mud.world.player import Player
-    
+
     try:
         try:
             os.remove("export%i.db"%CLUSTER)
         except:
             pass
-        
+
         #commit current transaction
-        dbconn = sqlite.connect(GetDBURI()[10:])#chars[0]._connection.getConnection()
+        dbpath = GetDBPath()
+        dbconn = sqlite.connect(dbpath)
         cursor = dbconn.cursor()
         exconn = sqlite.connect("export%i.db"%CLUSTER,isolation_level = None)
         excursor = exconn.cursor()
@@ -494,9 +527,12 @@ def ExtractCharactersThread(publicName,pid,cid,append=True):
         #bank items
         cursor.execute("SELECT * FROM item WHERE player_id = %i and slot >= %i and slot < %i;"%(pid,RPG_SLOT_BANK_BEGIN,RPG_SLOT_BANK_END))
         ExtractItemList(cursor,excursor,cursor.fetchall())
-        
-        excursor.execute("END;")
-        
+
+        try:
+            excursor.execute("END;")
+        except:
+            pass  # No transaction active
+
         excursor.close()
         exconn.close()
         
@@ -552,12 +588,15 @@ def ExtractCharactersThread(publicName,pid,cid,append=True):
         for t in stables:
             cursor.execute("SELECT * FROM %s WHERE spawn_id = %i;"%(t,sid))
             excursor.executemany('INSERT INTO %s VALUES(%s)'%(t,TVALUES[t]),cursor.fetchall())
-        
-        excursor.execute("END;")
-        
+
+        try:
+            excursor.execute("END;")
+        except:
+            pass  # No transaction active
+
         excursor.close()
         exconn.close()
-        
+
         f = file("cexport%i.db"%CLUSTER,"rb")
         buff = f.read()
         f.close()
