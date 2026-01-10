@@ -1,0 +1,133 @@
+# MoM Reborn Server - 32-bit Build
+# Builds pytge.so in native 32-bit environment to avoid pointer truncation issues
+
+# =============================================================================
+# BUILD STAGE: Compile pytge.so
+# =============================================================================
+FROM i386/debian:buster AS builder
+
+# Switch to archive repositories (Buster is EOL)
+RUN sed -i 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i 's|security.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i '/buster-updates/d' /etc/apt/sources.list
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    nasm \
+    make \
+    pkg-config \
+    python2.7-dev \
+    libsdl1.2-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    libfreetype6-dev \
+    libogg-dev \
+    libvorbis-dev \
+    libtheora-dev \
+    libxft-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy TGE engine source
+COPY tge-152-fork /build/tge-152-fork
+
+# Create 32-bit specific config
+WORKDIR /build/tge-152-fork
+RUN echo 'include ../mk/conf.UNIX.mk' > mk/conf.GCC4.LINUX.mk && \
+    echo 'ASMFLAGS = -f elf -dLINUX' >> mk/conf.GCC4.LINUX.mk
+
+# Configure the build (from parent directory of engine)
+RUN make -f mk/configure.mk OS=LINUX COMPILER=GCC4 BUILD=RELEASE
+
+# Clean old build artifacts (64-bit compiled libraries and objects)
+WORKDIR /build/tge-152-fork
+RUN rm -rf lib/out.GCC4.RELEASE engine/out.GCC4.RELEASE
+
+# Build libs first (creates lib/out.GCC4.RELEASE)
+WORKDIR /build/tge-152-fork/lib
+RUN make 2>&1 | tail -30
+
+# Build pytge.so - create output directory structure
+WORKDIR /build/tge-152-fork/engine
+# Create all directories that exist in the source tree
+RUN mkdir -p out.GCC4.RELEASE && \
+    find . -maxdepth 3 -type d ! -path "./out*" ! -path "./.git*" -print0 | \
+    xargs -0 -I {} mkdir -p "out.GCC4.RELEASE/{}" 2>/dev/null || true && \
+    ls out.GCC4.RELEASE/ | head -20
+RUN make pytge 2>&1 | tail -100 && \
+    ls -la out.GCC4.RELEASE/pytge.so && \
+    file out.GCC4.RELEASE/pytge.so
+
+# =============================================================================
+# RUNTIME STAGE: Python 2.7 + MoMServer
+# =============================================================================
+FROM i386/debian:buster
+
+# Switch to archive repositories (Buster is EOL)
+RUN sed -i 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i 's|security.debian.org|archive.debian.org|g' /etc/apt/sources.list && \
+    sed -i '/buster-updates/d' /etc/apt/sources.list
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    python2.7 \
+    python-pip \
+    libsdl1.2debian \
+    libgl1-mesa-glx \
+    libglu1-mesa \
+    libfreetype6 \
+    libogg0 \
+    libvorbis0a \
+    libtheora0 \
+    libxft2 \
+    procps \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create python2 symlink
+RUN ln -sf /usr/bin/python2.7 /usr/bin/python2 && \
+    ln -sf /usr/bin/python2.7 /usr/bin/python
+
+WORKDIR /server
+
+# Install Python dependencies
+# Note: pycrypto 2.3 has issues, use 2.6.1 which compiles on Debian Buster
+RUN pip install --no-cache-dir \
+    'Twisted==10.1.0' \
+    'zope.interface>=4.0,<5' \
+    'pyasn1==0.4.8' \
+    'pycrypto==2.6.1' \
+    'sqlobject'
+
+# Copy the built pytge.so from builder
+COPY --from=builder /build/tge-152-fork/engine/out.GCC4.RELEASE/pytge.so /server/pytge.so
+
+# Copy server files
+COPY *.py /server/
+COPY mud /server/mud/
+COPY mud_ext /server/mud_ext/
+COPY projects /server/projects/
+COPY serverconfig /server/serverconfig/
+
+# Create data directories
+RUN mkdir -p data/master data/character logs
+
+# Copy entrypoint
+COPY docker-entrypoint.sh /server/docker-entrypoint.sh
+RUN chmod +x /server/docker-entrypoint.sh
+
+# Expose ports
+# Master Server
+EXPOSE 2002
+# GM Server
+EXPOSE 2003
+# World Daemon
+EXPOSE 7000 7001
+# World Server (zones)
+EXPOSE 28000-28100
+# Manhole (admin)
+EXPOSE 8192
+
+ENTRYPOINT ["/server/docker-entrypoint.sh"]

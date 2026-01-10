@@ -47,22 +47,48 @@ The `pytge.pyd` (Python-Torque Game Engine bindings) is a **Windows-only binary*
 - **Start/stop scripts**: `start_server.sh`, `stop_server.sh`
 - **Log directory**: `./logs/` with per-component logs
 
-### Wine Attempt (Abandoned)
+### Wine Attempt (Abandoned - 2026-01-06)
 
 Attempted to run zone servers under Wine since `pytge.pyd` is Windows-only:
 - Installed Python 2.5 at `~/.wine/drive_c/Python25/`
-- Verified pytge.pyd loads in Wine Python 2.5
-- **Result**: TGE crashes in Wine's WoW64 mode with page fault at 0x1011b3e0
-- Wine 10.20 only supports WoW64 mode, no pure 32-bit prefix available
+- Verified `import pytge` works in Wine Python 2.5
+- **Result**: `pytge.Init()` crashes with page fault at 0x1E0266B4
+- Crash occurs during TGE window/graphics initialization (before `-dedicated` flag is processed)
+- Error: `wine: Unhandled page fault on read access to 00000004` (NULL pointer dereference)
+- Wine 10.20 only supports WoW64 mode - no pure 32-bit prefix available
+- Tried: null graphics driver, fake DISPLAY, `-dedicated` flag - none bypass the crash
+- Root cause: TGE calls Win32 GDI functions during Init that fail in Wine's headless WoW64 mode
 
 ### TMMOKit Source Archives
 
-Downloaded to `/tmp/tmmokit_dev_files/`:
-- `python-2.5.msi` - Python 2.5 installer
-- `Twisted_NoDocs-2.5.0.win32-py2.5.exe`
-- Various other dependencies
+Located in `./tmmokit_source/`:
+- `tge152_patches.zip` - Contains pytge source code patches for TGE 1.5.2
+- `tmmokit152_1_3_SP2.zip` - TMMOKit 1.3 SP2 for TGE 1.5.2
+- `tge1_5_2_patches/` - Extracted patches with `engine.patch` (2.3MB of Python binding code)
 
-The actual TGE source patches for building pytge would be in the full TMMOKit archive (not yet extracted).
+### TGE 1.5.2 Source Fork (NEW - 2026-01-06)
+
+Cloned from GitHub: `https://github.com/ldarren/tge-152-fork`
+Location: `/tmp/tge-152-fork/`
+
+**Key directories**:
+```
+/tmp/tge-152-fork/
+├── engine/
+│   ├── platformX86UNIX/     # Linux platform implementation (40+ files)
+│   ├── pyTorque/            # Basic Python bindings
+│   ├── mmokit-tgePython/    # Full MMO Kit Python bindings
+│   ├── mmokit-rpg/          # RPG game logic (referenced by Python bindings)
+│   └── afx/                 # Arcane FX support
+├── mk/
+│   ├── configure.mk         # Build configuration
+│   ├── conf.GCC4.LINUX.mk   # Linux GCC4 settings
+│   └── conf.UNIX.mk         # Unix build settings
+└── VS2005/
+    └── pyTorque.vcproj      # Reference for Python build configuration
+```
+
+This is a complete TGE 1.5.2 with Linux support already implemented. The main task is integrating the Python bindings into the Linux build system.
 
 ---
 
@@ -119,13 +145,41 @@ Kill with: `pkill -9 wine winedbg`
 #### Option A: Windows Server
 Run the full server on Windows where pytge.pyd works natively.
 
-#### Option B: Build pytge for Linux (Significant Work)
-1. Obtain TGE 1.5.2 or AFX 1.0.2 ComboPack source
-2. Apply patches from TMMOKit source archive
-3. Convert VS2005 solution to CMake/Makefile
-4. Build `pytge.so` for Linux with Python 2.7 bindings
+#### Option B: Build pytge.so for Linux (Viable Path Identified!)
 
-The TMMOKit patches contain ~60k+ lines of C++ code for the Python bindings.
+**Source Code Found**: `https://github.com/ldarren/tge-152-fork`
+- Complete TGE 1.5.2 source with AFX support
+- Includes `platformX86UNIX/` directory with full Linux platform code
+- Contains Python bindings in two locations:
+  - `engine/pyTorque/` - Basic Python bindings (pytorque.cc, tgePython.cc)
+  - `engine/mmokit-tgePython/` - Full MMO Kit bindings (tgePyObject.cc, tgePython.cc, tgePython.h)
+- Has Makefile-based build system with GCC4.LINUX support
+- Already cloned to `/tmp/tge-152-fork/`
+
+**Build Requirements**:
+- GCC/G++ (any modern version should work)
+- Python 2.7 development headers (`python2.7-dev` or `python27-devel`)
+- SDL 1.2 (`sdl12-compat` or `sdl`)
+- OpenGL, GLU headers
+- OpenAL
+- libogg, libvorbis, libtheora
+- freetype2
+- nasm (optional, for assembly optimizations)
+
+**Build Steps**:
+1. Configure: `make -f mk/configure.mk OS=LINUX COMPILER=GCC4 BUILD=RELEASE`
+2. Add Python sources to `engine/targets.torque.mk`
+3. Add Python include/library paths to `mk/conf.GCC4.LINUX.mk`
+4. Build: `make`
+5. Link as shared library: compile `pytge.so` linking against the engine
+
+**Challenges**:
+- The `mmokit-tgePython` files reference `rpg/` paths that need to be resolved
+- Need to determine if simpler `pyTorque` bindings or full `mmokit-tgePython` are needed
+- May require adapting from Python 2.5 to Python 2.7 API (likely minimal changes)
+- Dedicated server mode should be tested first to avoid graphics dependencies
+
+**Estimated Effort**: Medium (days, not weeks) - the hard work of Linux porting is already done in the fork
 
 ---
 
