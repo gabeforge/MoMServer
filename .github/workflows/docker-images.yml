@@ -23,7 +23,7 @@ on:
         default: 'latest'
 
   push:
-    branches: [master, main]
+    branches: [master, main, tge-linux-build]
     paths:
       - 'mud/**'
       - 'mud_ext/**'
@@ -34,6 +34,8 @@ on:
       - 'main.cs'
       - 'docker-entrypoint.sh'
       - 'Dockerfile.app'
+      - 'tge-152-fork/**'
+      - 'Dockerfile.tge-builder'
 
 env:
   REGISTRY: 10.0.0.6:5000
@@ -64,10 +66,32 @@ jobs:
         run: |
           podman push ${{ env.REGISTRY }}/momserver/base-deps:buster-i386 --tls-verify=false
 
+  check-tge-changes:
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, Linux]
+    outputs:
+      tge_changed: ${{ steps.filter.outputs.tge }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check for TGE changes
+        id: filter
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(tge-152-fork/|Dockerfile\.tge-builder)'; then
+            echo "tge=true" >> $GITHUB_OUTPUT
+          else
+            echo "tge=false" >> $GITHUB_OUTPUT
+          fi
+
   build-tge-builder:
-    needs: [build-base-deps]
-    # Run even if base-deps was skipped (already exists in registry)
-    if: always() && github.event_name == 'workflow_dispatch' && (inputs.image == 'tge-builder' || inputs.image == 'all')
+    needs: [build-base-deps, check-tge-changes]
+    # Run on manual dispatch OR when TGE files change on push
+    if: |
+      always() && (
+        (github.event_name == 'workflow_dispatch' && (inputs.image == 'tge-builder' || inputs.image == 'all')) ||
+        (github.event_name == 'push' && needs.check-tge-changes.outputs.tge_changed == 'true')
+      )
     runs-on: [self-hosted, Linux]
     steps:
       - uses: actions/checkout@v4
@@ -87,26 +111,52 @@ jobs:
           cp Dockerfile.tge-builder "$TMPFS/"
           echo "TMPFS=$TMPFS" >> $GITHUB_ENV
 
+      - name: Determine TGE version
+        id: tge_tag
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "version=v1.0" >> $GITHUB_OUTPUT
+            echo "sha_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ inputs.tge_version || 'v1.0' }}" >> $GITHUB_OUTPUT
+            echo "sha_tag=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build tge-builder image
         run: |
-          TGE_VERSION="${{ inputs.tge_version || 'v1.0' }}"
           podman build --layers --memory=8g --tls-verify=false \
             --build-arg BASE_IMAGE=${{ env.REGISTRY }}/momserver/base-deps:buster-i386 \
             -f Dockerfile.tge-builder \
-            -t ${{ env.REGISTRY }}/momserver/tge-builder:$TGE_VERSION \
+            -t ${{ env.REGISTRY }}/momserver/tge-builder:${{ steps.tge_tag.outputs.version }} \
             "$TMPFS"
+
+      - name: Tag with SHA (on push)
+        if: steps.tge_tag.outputs.sha_tag != ''
+        run: |
+          podman tag \
+            ${{ env.REGISTRY }}/momserver/tge-builder:${{ steps.tge_tag.outputs.version }} \
+            ${{ env.REGISTRY }}/momserver/tge-builder:${{ steps.tge_tag.outputs.sha_tag }}
 
       - name: Push tge-builder image
         run: |
-          TGE_VERSION="${{ inputs.tge_version || 'v1.0' }}"
-          podman push ${{ env.REGISTRY }}/momserver/tge-builder:$TGE_VERSION --tls-verify=false
+          podman push ${{ env.REGISTRY }}/momserver/tge-builder:${{ steps.tge_tag.outputs.version }} --tls-verify=false
+          if [ -n "${{ steps.tge_tag.outputs.sha_tag }}" ]; then
+            podman push ${{ env.REGISTRY }}/momserver/tge-builder:${{ steps.tge_tag.outputs.sha_tag }} --tls-verify=false
+          fi
 
       - name: Cleanup tmpfs
         if: always()
         run: rm -rf "$TMPFS"
 
   build-app:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.image == 'app' || inputs.image == 'all'))
+    needs: [build-tge-builder, check-tge-changes]
+    # Run on push (any relevant file change) or manual dispatch
+    # Wait for tge-builder if it's running, but don't fail if skipped
+    if: |
+      always() && (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && (inputs.image == 'app' || inputs.image == 'all'))
+      )
     runs-on: [self-hosted, Linux]
     steps:
       - uses: actions/checkout@v4
